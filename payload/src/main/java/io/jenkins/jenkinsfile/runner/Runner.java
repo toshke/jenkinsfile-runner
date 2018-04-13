@@ -1,5 +1,9 @@
 package io.jenkins.jenkinsfile.runner;
 
+import hudson.model.ParametersAction;
+import hudson.model.ParametersDefinitionProperty;
+import hudson.model.StringParameterDefinition;
+import hudson.model.StringParameterValue;
 import hudson.model.queue.QueueTaskFuture;
 import io.jenkins.jenkinsfile.runner.bootstrap.Bootstrap;
 import jenkins.model.Jenkins;
@@ -14,6 +18,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.nio.file.NoSuchFileException;
+import java.util.stream.Collector;
+import java.util.stream.Collectors;
 
 /**
  * This code runs with classloader setup to see all the pipeline plugins loaded
@@ -29,11 +35,23 @@ public class Runner {
     public int run(Bootstrap bootstrap) throws Exception {
         Jenkins j = Jenkins.getInstance();
         WorkflowJob w = j.createProject(WorkflowJob.class, "job");
+        w.addProperty(new ParametersDefinitionProperty(bootstrap.workflowParameters
+                .entrySet()
+                .stream()
+                .map(e -> new StringParameterDefinition(e.getKey(), "") )
+                .collect(Collectors.toList())));
+
         w.addProperty(new DurabilityHintJobProperty(FlowDurabilityHint.PERFORMANCE_OPTIMIZED));
         w.setDefinition(new CpsScmFlowDefinition(
-                new FileSystemSCM(bootstrap.wsDir),"Jenkinsfile"));
+                new FileSystemSCM(bootstrap.wsDir),bootstrap.workflowScript.getName()));
+
         QueueTaskFuture<WorkflowRun> f = w.scheduleBuild2(0,
-                new SetJenkinsfileLocation(new File(bootstrap.wsDir,"Jenkinsfile")));
+                new SetJenkinsfileLocation(bootstrap.workflowScript, false),
+                new ParametersAction(bootstrap.workflowParameters
+                        .entrySet()
+                        .stream()
+                        .map(e -> new StringParameterValue(e.getKey(), e.getValue()))
+                        .collect(Collectors.toList())));
 
         b = f.getStartCondition().get();
 
